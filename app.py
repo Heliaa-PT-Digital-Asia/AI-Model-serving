@@ -6,15 +6,15 @@ from model_utils import load_model_from_s3, run_inference
 app = Flask(__name__)
 
 # Assuming the model is stored in AWS S3
-# BUCKET_NAME = 'ai-detection-model'
-# MODEL_KEY = 'main-model/'
-MODEL_PATH = 's3://ai-detection-model/main-model/'
+BUCKET_NAME = 'ai-detection-model'
+MODEL_KEY = 'main-model/'
+
 model = None
 
 @app.route('/load_model', methods=['GET'])
 def load_model():
     global model
-    model = load_model_from_s3(MODEL_PATH)
+    model = load_model_from_s3(BUCKET_NAME, MODEL_KEY, '')
     if model:
         return jsonify({'message': 'Model loaded successfully'}), 200
     else:
