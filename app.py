@@ -13,7 +13,7 @@ model = None
 @app.route('/load_model', methods=['GET'])
 def load_model():
     global model
-    model = load_model_from_s3(ai-detection, main-model,"")
+    model = load_model_from_s3(BUCKET_NAME, MODEL_KEY,"")
     if model:
         return jsonify({'message': 'Model loaded successfully'}), 200
     else:
