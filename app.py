@@ -31,5 +31,5 @@ def predict():
     return jsonify({'keypoints': keypoints}), 200
 
 if __name__ == '__main__':
-    app.run(host='54.173.104.138', port=5000)
+    app.run(host='0.0.0.0', port=5000)
 
