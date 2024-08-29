@@ -1,20 +1,20 @@
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
-from model_utils import load_model_from_s3, run_inference
+from model_utils import load_model, run_inference
 
 app = Flask(__name__)
 
 # Assuming the model is stored in AWS S3
-BUCKET_NAME = 'ai-detection-model'
-MODEL_KEY = 'main-model/'
+# BUCKET_NAME = 'ai-detection-model'
+# MODEL_KEY = 'main-model/'
 
 model = None
 
 @app.route('/load_model', methods=['GET'])
 def load_model():
     global model
-    model = load_model_from_s3(BUCKET_NAME, MODEL_KEY, '')
+    model = load_model()
     if model:
         return jsonify({'message': 'Model loaded successfully'}), 200
     else:
