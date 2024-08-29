@@ -3,7 +3,7 @@ import tensorflow_hub as hub
 import cv2
 import numpy as np
 
-def load_model():
+def load_model_hub():
     model = hub.load("https://tfhub.dev/google/movenet/singlepose/thunder/4")
     # model = model.signatures['serving_default']
     # model = tf.saved_model.load(model_path)
