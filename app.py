@@ -9,7 +9,7 @@ import json
 
 
 app = Flask(__name__)
-CORS(app)  # This will enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST","PATCH","PUT","DELETE"]}}) # This will enable CORS for all routes
 
 # Connect to SQLite database
 def init_db():
