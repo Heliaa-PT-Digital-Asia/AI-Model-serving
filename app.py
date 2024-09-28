@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import pandas as pd
 from config import exercise_config
 from angle_functions import determine_risk
@@ -8,6 +9,7 @@ import json
 
 
 app = Flask(__name__)
+CORS(app)  # This will enable CORS for all routes
 
 # Connect to SQLite database
 def init_db():
@@ -43,7 +45,7 @@ def get_user_uuid_from_db(user_id):
 init_db()
 
 # Register user route
-@app.route('/register', methods=['POST'])
+@app.route('/', methods=['POST'])
 def register_user():
     data = request.json
     user_id = data.get('userId')
@@ -87,7 +89,7 @@ def save_results_to_db(user_uuid,  exercise_type ,exercise_mode, average_angle, 
     conn.commit()
     conn.close()
 
-@app.route('/Patch', methods=['POST'])
+@app.route('/', methods=['PATCH'])
 def calculate_angle():
     data = request.json
     if 'meta' not in data or 'content' not in data or 'userUUID' not in data:
@@ -135,7 +137,7 @@ def calculate_angle():
     return jsonify({"message": "done"})
 
 
-@app.route('/Get', methods=['POST'])
+@app.route('/', methods=['GET'])
 def get_calculated_data():
     data = request.json
     user_uuid = data.get('userUUID')
@@ -185,7 +187,7 @@ def get_calculated_data():
 
 
 
-@app.route('/Delete', methods=['POST'])
+@app.route('/', methods=['DELETE'])
 def delete_user():
     data = request.json
     user_uuid = data.get('userUUID')
