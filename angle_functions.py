@@ -75,22 +75,34 @@ def calculate_vertical_flexion_angle(keypoints, frame_shape, side):
 
 def calculate_abduction_angle(keypoints, frame_shape):
     y, x = frame_shape
-    shoulder_index, elbow_index = (5, 7), (6, 8)
-
+    
+    # Correct shoulder and elbow indices
+    shoulder_elbow_pairs = [(5, 7), (6, 8)]  # Left shoulder and elbow, right shoulder and elbow
+    
     angles = []
-    vertical_up = np.array([0, -1])
-
-    for s_idx, e_idx in shoulder_index:
+    vertical_up = np.array([0, -1])  # Vertical reference vector
+    
+    # Iterate over shoulder and elbow pairs
+    for s_idx, e_idx in shoulder_elbow_pairs:
         shoulder = np.array([keypoints[s_idx]['x'] * x, keypoints[s_idx]['y'] * y])
         elbow = np.array([keypoints[e_idx]['x'] * x, keypoints[e_idx]['y'] * y])
-
+        
+        # Calculate the arm vector
         arm_vector = elbow - shoulder
+        
+        # Calculate the dot product between arm vector and vertical_up vector
         dot_product = np.dot(arm_vector / np.linalg.norm(arm_vector), vertical_up)
+        
+        # Calculate the angle and correct it to measure abduction
         angle = np.degrees(np.arccos(dot_product))
         corrected_angle = 180 - angle
+        
+        # Append the corrected angle to the list
         angles.append(corrected_angle)
-
+    
+    # Return the minimum angle (smallest abduction angle)
     return min(angles)
+
 
 def determine_risk(angle, risk_ranges):
     """Determine risk level based on angle."""
