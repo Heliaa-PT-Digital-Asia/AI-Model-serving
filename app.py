@@ -62,7 +62,7 @@ def register_user():
     return jsonify({"userUUID": user_uuid}), 201
 
 # Function to save results to SQLite database
-def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, top_12_angles):
+def save_results_to_db(user_uuid,  exercise_type ,exercise_mode, average_angle, risk_label, top_12_angles):
     conn = sqlite3.connect('AI_DB.db')
     cursor = conn.cursor()
     
@@ -71,6 +71,7 @@ def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, to
     CREATE TABLE IF NOT EXISTS results (
         user_uuid TEXT,
         exercise_type TEXT,
+        exercise_mode TEXT,
         average_angle REAL,
         risk_label TEXT,
         top_12_angles TEXT
@@ -79,14 +80,14 @@ def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, to
     
     # Insert the result into the table
     cursor.execute('''
-    INSERT INTO results (user_uuid, exercise_type, average_angle, risk_label, top_12_angles)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (user_uuid, exercise_type, average_angle, risk_label, json.dumps(top_12_angles)))
+    INSERT INTO results (user_uuid, exercise_type, exercise_mode, average_angle, risk_label, top_12_angles)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ''', (user_uuid, exercise_type, exercise_mode, average_angle, risk_label, json.dumps(top_12_angles)))
     
     conn.commit()
     conn.close()
 
-@app.route('/calculate-angle', methods=['POST'])
+@app.route('/Patch', methods=['POST'])
 def calculate_angle():
     data = request.json
     if 'meta' not in data or 'content' not in data or 'userUUID' not in data:
@@ -113,7 +114,8 @@ def calculate_angle():
                 'Time': frame['time'],
                 'Angle': angle
             })
-
+    exercise_type_conf = config['exercises_type']
+    exercise_mode_conf = config['exercises_mode']
     df = pd.DataFrame(angles_data)
     if not df.empty:
         df = df.nlargest(12, 'Angle')
@@ -123,7 +125,7 @@ def calculate_angle():
         risk_label = determine_risk(average_angle, config['risk_ranges'])
 
         # Store the results in the database, associating them with the userUUID
-        save_results_to_db(user_uuid,  exercise_type, average_angle, risk_label, top_12_angles)
+        save_results_to_db(user_uuid,  exercise_type_conf, exercise_mode_conf, average_angle, risk_label, top_12_angles)
 
     else:
         # Still save an error to the database if no valid angles found
@@ -133,7 +135,7 @@ def calculate_angle():
     return jsonify({"message": "done"})
 
 
-@app.route('/get-calculated-data', methods=['POST'])
+@app.route('/Get', methods=['POST'])
 def get_calculated_data():
     data = request.json
     user_uuid = data.get('userUUID')
@@ -146,7 +148,7 @@ def get_calculated_data():
     cursor = conn.cursor()
     
     cursor.execute('''
-    SELECT exercise_type, average_angle, risk_label, top_12_angles 
+    SELECT exercise_type, exercise_mode, average_angle, risk_label, top_12_angles 
     FROM results 
     WHERE user_uuid = ?
     ''', (user_uuid,))
@@ -157,7 +159,7 @@ def get_calculated_data():
     if results:
         exercises_data = []
         for row in results:
-            exercise_type, average_angle, risk_label, top_12_angles = row
+            exercise_type, exercise_mode, average_angle, risk_label, top_12_angles = row
             top_12_angles = json.loads(top_12_angles)  # Convert back from JSON to Python list
             
             # Extract only the angle values, ignore the time
@@ -165,6 +167,7 @@ def get_calculated_data():
             
             exercises_data.append({
                 "exercise_type": exercise_type,
+                "exercise_mode": exercise_mode,
                 "average_angle": average_angle,
                 "risk_label": risk_label,
                 "angles": angle_values
@@ -182,7 +185,7 @@ def get_calculated_data():
 
 
 
-@app.route('/delete-user', methods=['POST'])
+@app.route('/Delete', methods=['POST'])
 def delete_user():
     data = request.json
     user_uuid = data.get('userUUID')
