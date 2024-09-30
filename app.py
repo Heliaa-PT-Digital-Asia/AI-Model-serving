@@ -64,7 +64,7 @@ def register_user():
     return jsonify({"userUUID": user_uuid}), 201
 
 # Function to save results to SQLite database
-def save_results_to_db(user_uuid,  exercise_type ,exercise_mode, average_angle, risk_label, top_12_angles):
+def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, top_12_angles):
     conn = sqlite3.connect('AI_DB.db')
     cursor = conn.cursor()
     
@@ -73,7 +73,7 @@ def save_results_to_db(user_uuid,  exercise_type ,exercise_mode, average_angle, 
     CREATE TABLE IF NOT EXISTS results (
         user_uuid TEXT,
         exercise_type TEXT,
-        exercise_mode TEXT,
+
         average_angle REAL,
         risk_label TEXT,
         top_12_angles TEXT
@@ -82,9 +82,9 @@ def save_results_to_db(user_uuid,  exercise_type ,exercise_mode, average_angle, 
     
     # Insert the result into the table
     cursor.execute('''
-    INSERT INTO results (user_uuid, exercise_type, exercise_mode, average_angle, risk_label, top_12_angles)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ''', (user_uuid, exercise_type, exercise_mode, average_angle, risk_label, json.dumps(top_12_angles)))
+    INSERT INTO results (user_uuid, exercise_type, average_angle, risk_label, top_12_angles)
+    VALUES (?, ?, ?, ?, ?)
+    ''', (user_uuid, exercise_type, average_angle, risk_label, json.dumps(top_12_angles)))
     
     conn.commit()
     conn.close()
@@ -117,7 +117,6 @@ def calculate_angle():
                 'Angle': angle
             })
     exercise_type_conf = config['exercises_type']
-    exercise_mode_conf = config['exercises_mode']
     df = pd.DataFrame(angles_data)
     if not df.empty:
         df = df.nlargest(12, 'Angle')
@@ -127,14 +126,14 @@ def calculate_angle():
         risk_label = determine_risk(average_angle, config['risk_ranges'])
 
         # Store the results in the database, associating them with the userUUID
-        save_results_to_db(user_uuid,  exercise_type_conf, exercise_mode_conf, average_angle, risk_label, top_12_angles)
+        save_results_to_db(user_uuid, exercise_type_conf, average_angle, risk_label, top_12_angles)
 
     else:
         # Still save an error to the database if no valid angles found
         save_results_to_db(user_uuid, None, "No valid angles found", [])
 
     # Return response after storing the data
-    return jsonify({"message": "done"})
+    return jsonify({"message": len(top_12_angles)})
 
 
 @app.route('/', methods=['GET'])
@@ -150,7 +149,7 @@ def get_calculated_data():
     cursor = conn.cursor()
     
     cursor.execute('''
-    SELECT exercise_type, exercise_mode, average_angle, risk_label, top_12_angles 
+    SELECT exercise_type, average_angle, risk_label, top_12_angles 
     FROM results 
     WHERE user_uuid = ?
     ''', (user_uuid,))
@@ -161,15 +160,14 @@ def get_calculated_data():
     if results:
         exercises_data = []
         for row in results:
-            exercise_type, exercise_mode, average_angle, risk_label, top_12_angles = row
+            exercise_type, average_angle, risk_label, top_12_angles = row
             top_12_angles = json.loads(top_12_angles)  # Convert back from JSON to Python list
             
             # Extract only the angle values, ignore the time
             angle_values = [entry['Angle'] for entry in top_12_angles]
             
             exercises_data.append({
-                "exercise_type": exercise_type,
-                "exercise_mode": exercise_mode,
+                "exercise_key": exercise_type,
                 "average_angle": average_angle,
                 "risk_label": risk_label,
                 "angles": angle_values
@@ -209,6 +207,31 @@ def delete_user():
         return jsonify({"message": "deleted"}), 200
     else:
         return jsonify({"message": "user not found"}), 404
+
+@app.route('/delete-results', methods=['DELETE'])
+def delete_results():
+    data = request.json
+    user_uuid = data.get('userUUID')
+
+    if not user_uuid:
+        return jsonify({"message": "userUUID is missing"}), 400
+
+    # Connect to the AI_DB.db to delete only from the results table
+    conn_db = sqlite3.connect('AI_DB.db')
+    cursor = conn_db.cursor()
+    
+    # Delete the results associated with this userUUID from the results table
+    cursor.execute('DELETE FROM results WHERE user_uuid = ?', (user_uuid,))
+    deleted_from_results = cursor.rowcount > 0  # Check if any row was deleted
+
+    conn_db.commit()
+    conn_db.close()
+
+    # Return appropriate message
+    if deleted_from_results:
+        return jsonify({"Status": "200 - OK"}), 200
+    else:
+        return jsonify({ "Status": "404 - Not Found"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
