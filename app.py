@@ -228,10 +228,10 @@ def delete_results():
     conn_db.close()
 
     # Return appropriate message
-    if deleted_from_results:
-        return jsonify({"Status": "200 - OK"}), 200
-    else:
-        return jsonify({ "Status": "404 - Not Found"}), 404
+    # if deleted_from_results:
+    return jsonify({"Affected rows": cursor.rowcount}), 200
+    # else:
+    #     return jsonify({ "Status": "404 - Not Found"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
