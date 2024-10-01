@@ -159,23 +159,67 @@ def get_calculated_data():
     
     if results:
         exercises_data = []
+        total_risk_amount = 0  # To calculate the total risk amount
+        num_exercises = len(results)  # Count the number of exercises
+
         for row in results:
             exercise_type, average_angle, risk_label, top_12_angles = row
             top_12_angles = json.loads(top_12_angles)  # Convert back from JSON to Python list
             
             # Extract only the angle values, ignore the time
             angle_values = [entry['Angle'] for entry in top_12_angles]
-            
-            exercises_data.append({
-                "exercise_key": exercise_type,
-                "average_angle": average_angle,
-                "risk_label": risk_label,
-                "angles": angle_values
-            })
+
+            # Get the risk ranges from the exercise configuration
+            config = exercise_config.get(exercise_type)
+            if config:
+                risk_ranges = config['risk_ranges']
+                angle_max = config['angle_max']
+
+                # Dynamic calculation of risk amount based on normalized value
+                exercise_risk_amounts = []
+                for angle in angle_values:
+                    if risk_ranges['low'][0] <= angle <= risk_ranges['low'][1]:
+                        # Low risk - Map to the range of 0 to 3
+                        normalized_value = (angle - risk_ranges['low'][0]) / (risk_ranges['low'][1] - risk_ranges['low'][0])
+                        exercise_risk_amounts.append(normalized_value * 3)
+                    elif risk_ranges['medium'][0] <= angle <= risk_ranges['medium'][1]:
+                        # Medium risk - Map to the range of 3 to 6
+                        normalized_value = (angle - risk_ranges['medium'][0]) / (risk_ranges['medium'][1] - risk_ranges['medium'][0])
+                        exercise_risk_amounts.append(3 + normalized_value * 3)
+                    elif risk_ranges['high'][0] <= angle <= risk_ranges['high'][1]:
+                        # High risk - Map to the range of 6 to 8
+                        normalized_value = (angle - risk_ranges['high'][0]) / (risk_ranges['high'][1] - risk_ranges['high'][0])
+                        exercise_risk_amounts.append(6 + normalized_value * 2)
+                    else:
+                        exercise_risk_amounts.append(0)  # Out of range (error case)
+
+                # Find the maximum risk amount for this exercise
+                exercise_risk_amount = max(exercise_risk_amounts)
+                total_risk_amount += exercise_risk_amount  # Sum for calculating the average
+                
+                exercises_data.append({
+                    "exercise_key": exercise_type,
+                    "average_angle": average_angle,
+                    "risk_label": risk_label,
+                    "angles": angle_values
+                })
+
+        # Calculate the total risk amount (average risk across all exercises)
+        total_risk_amount = total_risk_amount / num_exercises if num_exercises > 0 else 0
+
+        # Determine the total risk level based on the total risk amount
+        if total_risk_amount <= 2.99:
+            total_risk_level = "Low Risk"
+        elif 3 <= total_risk_amount <= 4.99:
+            total_risk_level = "Medium Risk"
+        else:
+            total_risk_level = "High Risk"
         
         response = {
             "userUUID": user_uuid,
-            "exercises": exercises_data
+            "exercises": exercises_data,
+            "total_risk_amount": total_risk_amount,
+            "total_risk_level": total_risk_level
         }
     else:
         response = {"error": "No data found for the given userUUID"}
