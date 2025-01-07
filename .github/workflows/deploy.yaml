@@ -1,0 +1,39 @@
+on:
+  push:
+    branches:
+      - main
+
+
+ 
+jobs:
+
+  deploy_main:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Authorize runner ssh access
+      uses: Heliaa-PT-Digital-Asia/Heliaa-Actions/authorize-aws-access@main
+      with:
+        aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY }}"
+        aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        aws-region: "${{ vars.AVAILABILITY_ZONE }}"
+        security-group-id: "${{ secrets.AWS_SECURITY_GROUP_ID }}"
+
+    - name: Deploy API
+      uses: Heliaa-PT-Digital-Asia/Heliaa-Actions/deploy-ai@main
+      with:
+        branch: 'main'
+        server-secret: ${{ secrets.MAIN_PRIVATE_KEY_AI }}
+        server-ip: ${{ secrets.AI_IP }}
+
+    - name: Revoke runner ssh access
+      uses: Heliaa-PT-Digital-Asia/Heliaa-Actions/revoke-aws-access@main
+      with:
+        aws-access-key-id: "${{ secrets.AWS_ACCESS_KEY  }}"
+        aws-secret-access-key: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        aws-region: "${{ vars.AVAILABILITY_ZONE }}"
+        security-group-id: "${{ secrets.AWS_SECURITY_GROUP_ID }}"      
+    
