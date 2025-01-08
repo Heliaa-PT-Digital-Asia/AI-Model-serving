@@ -1,5 +1,37 @@
 import numpy as np
 
+
+def calculate_torso_rotation_angle(keypoints, frame_shape, side):
+    y, x = frame_shape[0], frame_shape[1]
+
+    # Get coordinates for shoulders and hips
+    left_shoulder = np.array([keypoints[5]['x'] * x, keypoints[5]['y'] * y])
+    right_shoulder = np.array([keypoints[6]['x'] * x, keypoints[6]['y'] * y])
+    left_hip = np.array([keypoints[11]['x'] * x, keypoints[11]['y'] * y])
+    right_hip = np.array([keypoints[12]['x'] * x, keypoints[12]['y'] * y])
+
+    # Vector for shoulders and hips
+    shoulder_vector = right_shoulder - left_shoulder
+    hip_vector = right_hip - left_hip
+
+    # Calculate the angle between the two vectors
+    rotation_angle = np.degrees(np.arctan2(shoulder_vector[1], shoulder_vector[0]) -
+                                np.arctan2(hip_vector[1], hip_vector[0]))
+
+    # Normalize the angle based on the side of rotation
+    if side == 'left':
+        # Adjust for left rotation (positive angles)
+        if rotation_angle < 0:
+            rotation_angle += 360
+    else:
+        # Adjust for right rotation (negative angles)
+        if rotation_angle > 0:
+            rotation_angle -= 360
+
+    # Limit the angle between 0 and 90 degrees
+    rotation_angle = np.clip(abs(rotation_angle), 0, 90)
+
+    return rotation_angle
 def calculate_hip_rotation_internal_angle(keypoints, frame_shape, rotation_type, side):
     y, x = frame_shape[0], frame_shape[1]
 

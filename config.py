@@ -1,4 +1,4 @@
-from angle_functions import calculate_spine_angle, calculate_lateral_flexion_angle, calculate_knee_raise_angle, calculate_vertical_flexion_angle, calculate_abduction_angle
+from angle_functions import calculate_spine_angle, calculate_lateral_flexion_angle, calculate_knee_raise_angle, calculate_vertical_flexion_angle, calculate_abduction_angle, calculate_torso_rotation_angle
 
 # Configuration dictionary for exercises
 exercise_config = {
@@ -26,8 +26,8 @@ exercise_config = {
         'movement_threshold': 10,
         'risk_ranges': {'low': (27, 45), 'medium': (15, 26), 'high': (0, 14)}
     },
-    'lateral_left_right_tilt': {
-        'exercises_type':'lateral_left_right_tilt',
+    'lateral_left_right-tilt': {
+        'exercises_type':'lateral_left_right-tilt',
         'keypoints': [5, 6, 11, 12],
         'angle_function': lambda kp, shape: calculate_lateral_flexion_angle(kp, shape),
         'angle_max': 45,
@@ -358,3 +358,4 @@ exercise_config = {
 
 }
 SECRET_KEY = "255621@G320dQq@#"  # Make this a strong secret key
+    
