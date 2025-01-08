@@ -26,8 +26,8 @@ exercise_config = {
         'movement_threshold': 10,
         'risk_ranges': {'low': (27, 45), 'medium': (15, 26), 'high': (0, 14)}
     },
-    'lateral_left_right-tilt': {
-        'exercises_type':'lateral_left_right-tilt',
+    'lateral_left_right_tilt': {
+        'exercises_type':'lateral_left_right_tilt',
         'keypoints': [5, 6, 11, 12],
         'angle_function': lambda kp, shape: calculate_lateral_flexion_angle(kp, shape),
         'angle_max': 45,
