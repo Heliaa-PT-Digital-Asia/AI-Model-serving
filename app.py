@@ -6,6 +6,7 @@ from angle_functions import determine_risk
 import uuid
 import sqlite3
 import json
+from collections import Counter
 
 
 app = Flask(__name__)
@@ -41,9 +42,48 @@ def get_user_uuid_from_db(user_id):
     conn.close()
     return result[0] if result else None
 
+def evaluate_performance(user_uuid, exercise_type):
+    # Connect to database to fetch historical angle data
+    conn = sqlite3.connect('AI_DB.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT angle, timestamp 
+        FROM angle_data 
+        WHERE user_uuid = ? AND exercise_type = ?
+        ORDER BY timestamp DESC 
+        LIMIT 10  
+    ''', (user_uuid, exercise_type))
+
+    results = cursor.fetchall()
+    conn.close()
+
+    # Check if the user failed to meet the angle threshold
+    min_threshold = 10
+    failures = [angle for angle, _ in results if angle < min_threshold]
+
+    # Determine if skipping is necessary
+    if len(failures) > 8:  # Arbitrary threshold, can be adjusted
+        return {"skip": True, "message": "You can skip this exercise."}
+    else:
+        return {"skip": False, "message": "Please continue trying."}
+
+# Sample database table creation for storing angles
+def init_angle_data_db():
+    conn = sqlite3.connect('AI_DB.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS angle_data (
+        user_uuid TEXT,
+        exercise_type TEXT,
+        angle REAL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    conn.commit()
+    conn.close()
 # Initialize the database
 init_db()
-
+init_angle_data_db()
 # Register user route
 @app.route('/', methods=['POST'])
 def register_user():
@@ -64,7 +104,7 @@ def register_user():
     return jsonify({"userUUID": user_uuid}), 201
 
 # Function to save results to SQLite database
-def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, top_12_angles):
+def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, best_angle ,top_12_angles, skip):
     conn = sqlite3.connect('AI_DB.db')
     cursor = conn.cursor()
     
@@ -73,21 +113,24 @@ def save_results_to_db(user_uuid,  exercise_type , average_angle, risk_label, to
     CREATE TABLE IF NOT EXISTS results (
         user_uuid TEXT,
         exercise_type TEXT,
-
         average_angle REAL,
         risk_label TEXT,
-        top_12_angles TEXT
+        best_angle TEXT,
+        top_12_angles TEXT,
+        skip TEXT
     )
     ''')
     
     # Insert the result into the table
     cursor.execute('''
-    INSERT INTO results (user_uuid, exercise_type, average_angle, risk_label, top_12_angles)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (user_uuid, exercise_type, average_angle, risk_label, json.dumps(top_12_angles)))
+    INSERT INTO results (user_uuid, exercise_type, average_angle, risk_label, best_angle, top_12_angles, skip)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_uuid, exercise_type, average_angle, risk_label, best_angle ,json.dumps(top_12_angles), skip))
     
     conn.commit()
     conn.close()
+
+
 
 @app.route('/', methods=['PATCH'])
 def calculate_angle():
@@ -95,46 +138,57 @@ def calculate_angle():
     if 'meta' not in data or 'content' not in data or 'userUUID' not in data:
         return jsonify({"error": "Invalid JSON structure"}), 400
 
-    user_uuid = data['userUUID']  # Get the userUUID from the request
+    user_uuid = data['userUUID']
     frame_shape = (data['meta']['frame_shape']['y'], data['meta']['frame_shape']['x'])
     keypoints_data = data['content']
     exercise_type = data['meta']['exercise_type']
-    angles_data = []
     config = exercise_config[exercise_type]
+    angles_data = []
 
     for frame in keypoints_data:
         keypoints = frame['data']
         if len(keypoints) > 0:
             dict_keypoints = {kp['id']: kp for kp in keypoints}
-            if len(dict_keypoints.keys()) == len(config['keypoints']):
+            if all(kp_id in dict_keypoints for kp_id in config['keypoints']):
                 angle = config['angle_function'](dict_keypoints, frame_shape)
-        else:
-            angle = 0
+                if 0 < angle < config['angle_max']:
+                    angles_data.append({
+                        'Time': frame['time'],
+                        'Angle': angle
+                    })
 
-        if 0 < angle < config['angle_max']:
-            angles_data.append({
-                'Time': frame['time'],
-                'Angle': angle
-            })
-    exercise_type_conf = config['exercises_type']
-    df = pd.DataFrame(angles_data)
-    if not df.empty:
-        df = df.nlargest(12, 'Angle')
+    if angles_data:
+        df = pd.DataFrame(angles_data)
+        df = df.nlargest(12, 'Angle')  # Consider top 12 angles for finding the best angle
         average_angle = df['Angle'].mean()
         top_12_angles = df[['Time', 'Angle']].to_dict(orient='records')
+
+        # Determine risk labels for each angle and find the most frequent angle within the most common risk label
+        df['RiskLabel'] = df['Angle'].apply(lambda x: determine_risk(x, config['risk_ranges']))
+        most_common_label = df['RiskLabel'].mode()[0]
+        df['Angle'] = df['Angle'].astype(int)
+        best_angle = df[df['RiskLabel'] == most_common_label]['Angle'].value_counts().idxmax()
 
         risk_label = determine_risk(average_angle, config['risk_ranges'])
 
         # Store the results in the database, associating them with the userUUID
-        save_results_to_db(user_uuid, exercise_type_conf, average_angle, risk_label, top_12_angles)
-
+        
+        skipping_response = evaluate_performance(user_uuid, exercise_type)
+        save_results_to_db(user_uuid, exercise_type, average_angle, risk_label, float (best_angle) , top_12_angles, skipping_response['skip'])
+        return jsonify({
+            "userUUID": user_uuid,
+            "average_angle": average_angle,
+            "best_angle": float (best_angle),
+            "risk_label": risk_label,
+            "top_angles": top_12_angles,
+            "skip": skipping_response['skip'],
+            "message": skipping_response['message']
+        })
+ 
     else:
         # Still save an error to the database if no valid angles found
-        save_results_to_db(user_uuid, None, "No valid angles found", [])
-
-    # Return response after storing the data
-    return jsonify({"message": len(top_12_angles)})
-
+        save_results_to_db(user_uuid, exercise_type, "No valid angles found", [])
+        return jsonify({"error": "No valid angles found"})
 
 @app.route('/', methods=['GET'])
 def get_calculated_data():
@@ -149,7 +203,7 @@ def get_calculated_data():
     cursor = conn.cursor()
     
     cursor.execute('''
-    SELECT exercise_type, average_angle, risk_label, top_12_angles 
+    SELECT exercise_type, average_angle, risk_label, top_12_angles , best_angle, skip
     FROM results 
     WHERE user_uuid = ?
     ''', (user_uuid,))
@@ -159,11 +213,13 @@ def get_calculated_data():
     
     if results:
         exercises_data = []
-        total_risk_amount = 0  # To calculate the total risk amount
-        num_exercises = len(results)  # Count the number of exercises
+        total_risk_amount = 0  
+        num_exercises = 0 
+        # To calculate the total risk amount
+        # num_exercises = len(results)  # Count the number of exercises
 
         for row in results:
-            exercise_type, average_angle, risk_label, top_12_angles = row
+            exercise_type, average_angle, risk_label, top_12_angles, best_angle , skip = row
             top_12_angles = json.loads(top_12_angles)  # Convert back from JSON to Python list
             
             # Extract only the angle values, ignore the time
@@ -192,16 +248,19 @@ def get_calculated_data():
                         exercise_risk_amounts.append(6 + normalized_value * 2)
                     else:
                         exercise_risk_amounts.append(0)  # Out of range (error case)
+                if skip == "0": 
+                    exercise_risk_amount = sum ( exercise_risk_amounts) / len (exercise_risk_amounts )                  
+                    total_risk_amount += exercise_risk_amount  # Sum for calculating the average
+                    num_exercises = num_exercises + 1 
 
-                # Find the maximum risk amount for this exercise
-                exercise_risk_amount = max(exercise_risk_amounts)
-                total_risk_amount += exercise_risk_amount  # Sum for calculating the average
-                
+
                 exercises_data.append({
                     "exercise_key": exercise_type,
                     "average_angle": average_angle,
                     "risk_label": risk_label,
-                    "angles": angle_values
+                    "angles": angle_values,
+                    "best_angle": best_angle,
+                    "skip": skip
                 })
 
         # Calculate the total risk amount (average risk across all exercises)
@@ -225,9 +284,6 @@ def get_calculated_data():
         response = {"error": "No data found for the given userUUID"}
     
     return jsonify(response)
-
-
-
 
 @app.route('/', methods=['DELETE'])
 def delete_user():
