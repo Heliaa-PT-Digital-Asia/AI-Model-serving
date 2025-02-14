@@ -293,20 +293,33 @@ def delete_user():
     if not user_uuid:
         return jsonify({"message": "userUUID is missing"}), 400
 
-    # Delete from users.db
     conn_db = sqlite3.connect('AI_DB.db')
     cursor = conn_db.cursor()
+
+    # Check if the 'users' table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+    if not cursor.fetchone():
+        return jsonify({"message": "Users table does not exist"}), 500
+
+    # Check if the 'results' table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='results';")
+    if not cursor.fetchone():
+        return jsonify({"message": "Results table does not exist"}), 500
+
+    # Proceed with the deletion if tables exist
     cursor.execute('DELETE FROM users WHERE userUUID= ?', (user_uuid,))
     cursor.execute('DELETE FROM results WHERE user_uuid = ?', (user_uuid,))
     conn_db.commit()
+
     deleted_from_ai = cursor.rowcount > 0  # Check if any row was deleted
     conn_db.close()
 
-    # Check if the user existed in either DB
     if deleted_from_ai:
-        return jsonify({"message": "deleted"}), 200
+        return jsonify({"message": "User and results deleted successfully"}), 200
     else:
-        return jsonify({"message": "user not found"}), 404
+        return jsonify({"message": "User not found"}), 404
+
+
 
 @app.route('/drop', methods=['DELETE'])
 def delete_results():
@@ -319,7 +332,12 @@ def delete_results():
     # Connect to the AI_DB.db to delete only from the results table
     conn_db = sqlite3.connect('AI_DB.db')
     cursor = conn_db.cursor()
-    
+
+    # Check if the 'results' table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='results';")
+    if not cursor.fetchone():
+        return jsonify({"message": "Results table does not exist"}), 500
+
     # Delete the results associated with this userUUID from the results table
     cursor.execute('DELETE FROM results WHERE user_uuid = ?', (user_uuid,))
     deleted_from_results = cursor.rowcount > 0  # Check if any row was deleted
@@ -327,11 +345,11 @@ def delete_results():
     conn_db.commit()
     conn_db.close()
 
-    # Return appropriate message
-    # if deleted_from_results:
-    return jsonify({"Affected rows": cursor.rowcount}), 200
-    # else:
-    #     return jsonify({ "Status": "404 - Not Found"}), 404
+    if deleted_from_results:
+        return jsonify({"Affected rows": cursor.rowcount}), 200
+    else:
+        return jsonify({"message": "No results found for the given userUUID"}), 404
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
