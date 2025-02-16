@@ -42,6 +42,16 @@ def get_user_uuid_from_db(user_id):
     conn.close()
     return result[0] if result else None
 
+def store_angle_data(user_uuid, exercise_type, angle):
+    conn = sqlite3.connect('AI_DB.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+    INSERT INTO angle_data (user_uuid, exercise_type, angle, timestamp)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ''', (user_uuid, exercise_type, angle))
+    conn.commit()
+    conn.close()
+
 def evaluate_performance(user_uuid, exercise_type):
     # Connect to database to fetch historical angle data
     conn = sqlite3.connect('AI_DB.db')
@@ -51,18 +61,21 @@ def evaluate_performance(user_uuid, exercise_type):
         FROM angle_data 
         WHERE user_uuid = ? AND exercise_type = ?
         ORDER BY timestamp DESC 
-        LIMIT 10  
+         
     ''', (user_uuid, exercise_type))
 
     results = cursor.fetchall()
     conn.close()
 
     # Check if the user failed to meet the angle threshold
-    min_threshold = 10
+    min_threshold = exercise_config[exercise_type]['angle_min']
     failures = [angle for angle, _ in results if angle < min_threshold]
+    fail_count = len(failures) / (len(results))
+    
 
-    # Determine if skipping is necessary
-    if len(failures) > 8:  # Arbitrary threshold, can be adjusted
+
+
+    if fail_count > 0.85:  # Arbitrary threshold, can be adjusted
         return {"skip": True, "message": "You can skip this exercise."}
     else:
         return {"skip": False, "message": "Please continue trying."}
@@ -157,6 +170,8 @@ def calculate_angle():
                         'Angle': angle
                     })
 
+                    store_angle_data(user_uuid, exercise_type, angle)
+
     if angles_data:
         df = pd.DataFrame(angles_data)
         df = df.nlargest(12, 'Angle')  # Consider top 12 angles for finding the best angle
@@ -187,7 +202,7 @@ def calculate_angle():
  
     else:
         # Still save an error to the database if no valid angles found
-        save_results_to_db(user_uuid, exercise_type, "No valid angles found", [])
+        save_results_to_db(user_uuid, exercise_type, 0.0 , "High Risk" ,0.0, [],True)
         return jsonify({"error": "No valid angles found"})
 
 @app.route('/', methods=['GET'])
@@ -264,7 +279,7 @@ def get_calculated_data():
                 })
 
         # Calculate the total risk amount (average risk across all exercises)
-        total_risk_amount = total_risk_amount / num_exercises if num_exercises > 0 else 0
+        total_risk_amount = total_risk_amount / num_exercises if num_exercises > 0 else 100
 
         # Determine the total risk level based on the total risk amount
         if total_risk_amount <= 2.99:
@@ -285,13 +300,14 @@ def get_calculated_data():
     
     return jsonify(response)
 
+
 @app.route('/', methods=['DELETE'])
 def delete_user():
     data = request.json
     user_uuid = data.get('userUUID')
 
     if not user_uuid:
-        return jsonify({"message": "userUUID is missing"}), 400
+        return jsonify({"message": "userUUID is missing"}), 200
 
     conn_db = sqlite3.connect('AI_DB.db')
     cursor = conn_db.cursor()
@@ -299,16 +315,17 @@ def delete_user():
     # Check if the 'users' table exists
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
     if not cursor.fetchone():
-        return jsonify({"message": "Users table does not exist"}), 500
+        return jsonify({"message": "Users table does not exist"}), 200
 
     # Check if the 'results' table exists
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='results';")
     if not cursor.fetchone():
-        return jsonify({"message": "Results table does not exist"}), 500
+        return jsonify({"message": "Results table does not exist"}), 200
 
     # Proceed with the deletion if tables exist
     cursor.execute('DELETE FROM users WHERE userUUID= ?', (user_uuid,))
     cursor.execute('DELETE FROM results WHERE user_uuid = ?', (user_uuid,))
+    cursor.execute('DELETE FROM angle_data WHERE user_uuid = ?', (user_uuid,))
     conn_db.commit()
 
     deleted_from_ai = cursor.rowcount > 0  # Check if any row was deleted
@@ -317,7 +334,7 @@ def delete_user():
     if deleted_from_ai:
         return jsonify({"message": "User and results deleted successfully"}), 200
     else:
-        return jsonify({"message": "User not found"}), 404
+        return jsonify({"message": "User not found"}), 200
 
 
 
@@ -327,7 +344,8 @@ def delete_results():
     user_uuid = data.get('userUUID')
 
     if not user_uuid:
-        return jsonify({"message": "userUUID is missing"}), 400
+        #400
+        return jsonify({"message": "userUUID is missing"}), 200
 
     # Connect to the AI_DB.db to delete only from the results table
     conn_db = sqlite3.connect('AI_DB.db')
@@ -336,19 +354,24 @@ def delete_results():
     # Check if the 'results' table exists
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='results';")
     if not cursor.fetchone():
-        return jsonify({"message": "Results table does not exist"}), 500
+        #500
+        return jsonify({"message": "Results table does not exist"}), 200
 
     # Delete the results associated with this userUUID from the results table
     cursor.execute('DELETE FROM results WHERE user_uuid = ?', (user_uuid,))
+    
     deleted_from_results = cursor.rowcount > 0  # Check if any row was deleted
-
+    cnt=cursor.rowcount
+    cursor.execute('DELETE FROM angle_data WHERE user_uuid = ?', (user_uuid,))
     conn_db.commit()
     conn_db.close()
 
     if deleted_from_results:
-        return jsonify({"Affected rows": cursor.rowcount}), 200
+        return jsonify({"Affected rows": cnt}), 200
+        
     else:
-        return jsonify({"message": "No results found for the given userUUID"}), 404
+        #404
+        return jsonify({"message": "No results found for the given userUUID"}), 200
 
 
 if __name__ == '__main__':
