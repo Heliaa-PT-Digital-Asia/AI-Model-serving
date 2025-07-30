@@ -55,7 +55,7 @@ ASSESSMENT_CONFIG = {
             "shoulder_abduction": 180
         }
     },
-    "neck_shoulder": {
+    "shoulder_and_neck": {
         "charts": [
             {
                 "chart_title": "neck analysis",
