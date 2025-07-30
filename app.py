@@ -7,7 +7,8 @@ import uuid
 import sqlite3
 import json
 from collections import Counter
-
+from assessment_config import ASSESSMENT_CONFIG
+from config import exercise_config
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST","PATCH","PUT","DELETE"]}}) # This will enable CORS for all routes
@@ -372,6 +373,130 @@ def delete_results():
     else:
         #404
         return jsonify({"message": "No results found for the given userUUID"}), 200
+
+# Mapping of body parts to exercises
+# This mapping is used to determine which exercises correspond to each body part in the assessment charts
+
+chart_to_exercises_mapping = {
+    "flexion": ["back_flexion", "neck_flexion"],
+    "extension": ["back_extension", "neck_extension"],
+    "lateral_flexion": ["lateral_flexion", "left_tilt", "right_tilt"],
+    "tilt": ["left_tilt", "right_tilt"],
+    "rotation": ["back_left_rotation", "back_right_rotation"],
+    "abduction": ["shoulder_abduction"],
+    "internal_rotation": ["shoulder_internal_rotation_left", "shoulder_internal_rotation_right"],
+    "external_rotation": ["shoulder_external_rotation_left", "shoulder_external_rotation_right"],
+    "vertical_flexion": ["shoulder_vertical_flexion_left", "shoulder_vertical_flexion_right"],
+    "shoulder_vertical_extension": ["shoulder_vertical_extension_left", "shoulder_vertical_extension_right"],
+    "knee_flexion": ["knee_raise_left", "knee_raise_right"],
+    "hip_internal_rotation": ["hip_internal_rotation_left", "hip_internal_rotation_right"],
+    "hip_external_rotation": ["hip_external_rotation_left", "hip_external_rotation_right"]
+}
+
+def fetch_user_exercises(user_uuid):
+    conn = sqlite3.connect('AI_DB.db')
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT exercise_type, average_angle
+        FROM results
+        WHERE user_uuid = ? AND skip = 0
+    """, (user_uuid,))
+    rows = cursor.fetchall()
+    conn.close()
+    return {exercise: avg for exercise, avg in rows}
+
+
+# === Main Summary Generator ===
+def generate_assessment_summary(user_uuid, assessment_name):
+    assessment = ASSESSMENT_CONFIG.get(assessment_name)
+    if not assessment:
+        return {"error": "Invalid assessment name"}
+
+    user_data = fetch_user_exercises(user_uuid)
+    charts_output = []
+    table_output = []
+    all_status_values = []
+
+    for chart in assessment["charts"]:
+        body_detail = {}
+        for part in chart["body_parts"]:
+            mapped_exercises = chart_to_exercises_mapping.get(part, [])
+            relevant_angles = [user_data[ex] for ex in mapped_exercises if ex in user_data]
+            if relevant_angles:
+                avg_angle = sum(relevant_angles) / len(relevant_angles)
+                
+                normal_range_values = []
+                for ex in mapped_exercises:
+                    for move_key, norm in assessment["table_movements"].items():
+                        if ex == move_key:
+                            normal_range_values.append(norm)
+                if normal_range_values:
+                    avg_normal = sum(normal_range_values) / len(normal_range_values)
+                else:
+                    avg_normal = 1  
+                percent = avg_angle / avg_normal
+                if percent >= 0.85:
+                    status = "good"
+                elif percent >= 0.6:
+                    status = "fair"
+                else:
+                    status = "poor"
+            else:
+                status = "poor"
+
+            body_detail[part] = status
+            all_status_values.append(status)
+
+        charts_output.append({
+            "chart_title": chart["chart_title"],
+            "chart_type": chart["chart_type"],
+            "body_detail": body_detail
+        })
+
+    # Generate the table output based on the assessment movements
+    for movement, normal_range in assessment["table_movements"].items():
+        result_angle = user_data.get(movement, 0)
+        percent = result_angle / normal_range if normal_range > 0 else 0
+        if percent >= 0.85:
+            color = "green"
+        elif percent >= 0.6:
+            color = "orange"
+        else:
+            color = "red"
+
+        table_output.append({
+            "movment": movement,
+            "result": round(result_angle, 1),
+            "normal_range": normal_range,
+            "color": color
+        })
+
+    
+    from collections import Counter
+    most_common = Counter(all_status_values).most_common(1)
+    overall_status = most_common[0][0] if most_common else "poor"
+
+    return {
+        "userUUID": user_uuid,
+        "assessment": assessment_name,
+        "overall": overall_status,
+        "charts": charts_output,
+        "table": table_output
+    }
+
+# === Main API Endpoint ===
+@app.route('/api/assessment_summary', methods=['POST'])
+def get_chart_assessment():
+    data = request.get_json()
+    user_uuid = data.get("userUUID")
+    assessment_name = data.get("assessment")
+
+    if not user_uuid or not assessment_name:
+        return jsonify({"error": "Missing userUUID or assessment"}), 400
+
+    summary = generate_assessment_summary(user_uuid, assessment_name)
+    return jsonify(summary)
+
 
 
 if __name__ == '__main__':
