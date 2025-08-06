@@ -377,33 +377,23 @@ def delete_results():
 # Mapping of body parts to exercises
 # This mapping is used to determine which exercises correspond to each body part in the assessment charts
 
-chart_to_exercises_mapping = {
-    "flexion": ["back_flexion", "neck_flexion"],
-    "extension": ["back_extension", "neck_extension"],
-    "lateral_flexion": ["lateral_flexion", "left_tilt", "right_tilt"],
-    "tilt": ["left_tilt", "right_tilt"],
-    "rotation": ["back_left_rotation", "back_right_rotation"],
-    "abduction": ["shoulder_abduction"],
-    "internal_rotation": ["shoulder_internal_rotation_left", "shoulder_internal_rotation_right"],
-    "external_rotation": ["shoulder_external_rotation_left", "shoulder_external_rotation_right"],
-    "vertical_flexion": ["shoulder_vertical_flexion_left", "shoulder_vertical_flexion_right"],
-    "shoulder_vertical_extension": ["shoulder_vertical_extension_left", "shoulder_vertical_extension_right"],
-    "knee_flexion": ["knee_raise_left", "knee_raise_right"],
-    "hip_internal_rotation": ["hip_internal_rotation_left", "hip_internal_rotation_right"],
-    "hip_external_rotation": ["hip_external_rotation_left", "hip_external_rotation_right"]
-}
 
 def fetch_user_exercises(user_uuid):
     conn = sqlite3.connect('AI_DB.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT exercise_type, average_angle
+        SELECT exercise_type, CAST(best_angle AS FLOAT)
         FROM results
         WHERE user_uuid = ? AND skip = 0
     """, (user_uuid,))
     rows = cursor.fetchall()
     conn.close()
     return {exercise: avg for exercise, avg in rows}
+
+correction_map = { "lateral_left_right_tilt" : "lateral_flexion" , "left_rotation" : "back_left_rotation", "right_rotation": "back_right_rotation" ,"internal_rotation_left": "hip_internal_rotation_left", 
+ "internal_rotation_right": "hip_internal_rotation_right", "external_rotation_left": "hip_external_rotation_left", "external_rotation_right": "hip_external_rotation_right",
+  "knee_raise_hip_left": "knee_raise_left", "knee_raise_hip_right": "knee_raise_right","right_shoulder_vertical_flexion": "shoulder_vertical_flexion_right", "left_shoulder_vertical_flexion": "shoulder_vertical_flexion_left",
+  "right_tilt": "neck_right_tilt","left_tilt": "neck_left_tilt"}
 
 
 # === Main Summary Generator ===
@@ -413,18 +403,28 @@ def generate_assessment_summary(user_uuid, assessment_name):
         return {"error": "Invalid assessment name"}
 
     user_data = fetch_user_exercises(user_uuid)
+    print ("User Data v1:", user_data)
     charts_output = []
     table_output = []
     all_status_values = []
 
+
+    corrected_user_data = {}
+    for key, value in user_data.items():
+        new_key = correction_map.get(key, key)  
+        corrected_user_data[new_key] = value
+    user_data = corrected_user_data
+    print ("User Data:", user_data)
+
+
     for chart in assessment["charts"]:
         body_detail = {}
-        for part in chart["body_parts"]:
-            mapped_exercises = chart_to_exercises_mapping.get(part, [])
+        for part, mapped_exercises in chart["body_parts"].items():
+            # mapped_exercises = chart_to_exercises_mapping.get(part, [])
             relevant_angles = [user_data[ex] for ex in mapped_exercises if ex in user_data]
+
             if relevant_angles:
                 avg_angle = sum(relevant_angles) / len(relevant_angles)
-                
                 normal_range_values = []
                 for ex in mapped_exercises:
                     for move_key, norm in assessment["table_movements"].items():
@@ -435,9 +435,9 @@ def generate_assessment_summary(user_uuid, assessment_name):
                 else:
                     avg_normal = 1  
                 percent = avg_angle / avg_normal
-                if percent >= 0.85:
+                if percent >= 0.75:
                     status = "good"
-                elif percent >= 0.6:
+                elif percent >= 0.5:
                     status = "fair"
                 else:
                     status = "poor"
@@ -457,9 +457,9 @@ def generate_assessment_summary(user_uuid, assessment_name):
     for movement, normal_range in assessment["table_movements"].items():
         result_angle = user_data.get(movement, 0)
         percent = result_angle / normal_range if normal_range > 0 else 0
-        if percent >= 0.85:
+        if percent >= 0.75:
             color = "green"
-        elif percent >= 0.6:
+        elif percent >= 0.5:
             color = "orange"
         else:
             color = "red"
